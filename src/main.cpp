@@ -38,6 +38,31 @@
      std::unordered_map (934 ms). Wow :)
    - colisions per insert = 27 when n/m = 1898067/2000000 ~ 95% on the end. Quite high.
 
+
+ * iteration 1.
+
+ * Still dummy hashmap with little change
+   - in benchmark uniwersum is limited by 10^9 so long long arithmetic and conversions in h are useless
+
+   - Results:
+
+     benchmark
+
+     operations_number = 3800000, uniwersum_size = 1000000000
+     Preprocess data
+     Hashmap start watch
+     Hashmap stop watch: Time = 368 ms.
+     STL Map start watch
+     STL Map stop watch: Time = 3424 ms.
+     STL Unordered Map start watch
+     STL Unordered Map stop watch: Time = 862 ms.
+     Summary
+     inserts = 1897496, members = 1902504, hits = 1852, stl hits = 1852, hashmap.size = 1895666, stl map size = 1895666
+     hashmap.collisions = 50350327, colisions per insert = 26
+     OK :)
+
+   - impressive. I hit hot spot. This little change give 2x speed up!
+
  */
 
 constexpr int INF = -1;
@@ -118,11 +143,15 @@ protected:
         return 1;
     }
 
-    // linear hashing
-    static int h(int k, int j, int m)
-    {
-        return int( ( (long long)(h1(k, m)) + (long long)(j)  )%m );
-    }
+	// linear hashing
+	static int h(int k, int j, int m)
+	{
+		//assert(0 <= k && k <= 1000000000);
+		//assert(0 <= j && j <= 1000000000);
+		//assert(0 <= m && m <= 1000000000);
+		//assert(0 <= h1(k, m) && h1(k, m) <= 1000000000);
+		return (h1(k, m) + j)%m;
+	}
 
     static int hash(config &c, int m)
     {
