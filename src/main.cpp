@@ -63,7 +63,19 @@
 
    - impressive. I hit hot spot. This little change give 2x speed up!
 
+ * iteration 2.
+
+ * Seems that hashmap size = prime number doesn't help at all.
+
+ * iteration 3.
+   - refactoring, Hashmap becomes tamplate with policy-based design.
+     We have many different hash functions so it's necessary otherwise mess will happen.
+     Limited_linear_hash is default now.
+     After refactoring timings are the same.
  */
+
+namespace common
+{
 
 constexpr int INF = -1;
 
@@ -83,6 +95,52 @@ struct config
     }
 };// __attribute__((packed));
 
+class Linear_hash final
+{
+public:
+    static int h1(int x, int m)
+    {
+        return x % m;
+    }
+
+    static int h(int k, int j, int m)
+    {
+        return int( ( (long long)(h1(k, m)) + (long long)(j)  )%m );
+    }
+
+    static int hash(config &c, int m)
+    {
+        return c.content % m;
+    }
+};
+
+/*
+ * in our benchmark uniwersum is limited by 10^9 so long long arithmetic and conversions in h are useless
+ */
+class Limited_linear_hash final
+{
+public:
+    static int h1(int x, int m)
+    {
+        return x % m;
+    }
+
+	static int h(int k, int j, int m)
+	{
+		//assert(0 <= k && k <= 1000000000);
+		//assert(0 <= j && j <= 1000000000);
+		//assert(0 <= m && m <= 1000000000);
+		//assert(0 <= h1(k, m) && h1(k, m) <= 1000000000);
+		return (h1(k, m) + j)%m;
+	}
+
+    static int hash(config &c, int m)
+    {
+        return c.content % m;
+    }
+};
+
+template<class Hash = Limited_linear_hash>
 class Hashmap final
 {
 public:
@@ -133,37 +191,13 @@ public:
     unsigned collisions {0};
 
 protected:
-    static int h1(int x, int m)
-    {
-        return x % m;
-    }
-
-    static int h2(int)
-    {
-        return 1;
-    }
-
-	// linear hashing
-	static int h(int k, int j, int m)
-	{
-		//assert(0 <= k && k <= 1000000000);
-		//assert(0 <= j && j <= 1000000000);
-		//assert(0 <= m && m <= 1000000000);
-		//assert(0 <= h1(k, m) && h1(k, m) <= 1000000000);
-		return (h1(k, m) + j)%m;
-	}
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
 
     int process_search(config &c, bool ommit_marked)
     {
         const int m = table.size();
-        const int hash_config = hash(c, m);
+        const int hash_config = Hash::hash(c, m);
         int j = 0;
-        int i = h(hash_config, j, m);
+        int i = Hash::h(hash_config, j, m);
 
         while ( !(table[i] == c) && !table[i].is_empty())
         {
@@ -171,7 +205,7 @@ protected:
             if (!ommit_marked && table[i].mark)
                 break;
             j++;
-            i = h(hash_config, j, m);
+            i = Hash::h(hash_config, j, m);
             collisions++;
         }
         return i;
@@ -181,12 +215,14 @@ protected:
     std::vector<config> table;
 };
 
+}
+
 
 namespace basics
 {
 
-Hashmap hashmap(500);
-std::map<int, config> stl_map;
+common::Hashmap<> hashmap(500);
+std::map<int, common::config> stl_map;
 
 static inline char basic_get_operation()
 {
@@ -209,7 +245,7 @@ static void basic_test_case()
     hashmap.reset();
     stl_map.clear();
 
-    config basic_config;
+    common::config basic_config;
     basic_config.mark = false;
 
     printf("operations_number = %d\n", operations_number);
@@ -256,8 +292,8 @@ static void basic_test_case()
 namespace real_tests
 {
 
-Hashmap hashmap(100000);
-std::map<int, config> stl_map;
+common::Hashmap<> hashmap(100000);
+std::map<int, common::config> stl_map;
 
 static inline char get_operation()
 {
@@ -282,7 +318,7 @@ static void real_test_case()
     assert(hashmap.size() == 0);
     assert(stl_map.size() == 0);
 
-    config basic_config;
+    common::config basic_config;
     basic_config.mark = false;
 
     std::vector<std::pair<int, int>> hashmap_log, stl_map_log;
@@ -361,12 +397,13 @@ static void real_test_case()
 
 }
 
+
 namespace benchmarks
 {
 
-Hashmap hashmap(2000000);
-std::map<int, config> stl_map;
-std::unordered_map<int, config> stl_unordered_map;
+common::Hashmap<> hashmap(2000000);
+std::map<int, common::config> stl_map;
+std::unordered_map<int, common::config> stl_unordered_map;
 
 #define TIMESPEC_NSEC(ts) ((ts)->tv_sec * 1000000000ULL + (ts)->tv_nsec)
 
@@ -385,8 +422,6 @@ static inline char get_operation()
 /* This benchmark test only I+M.
  *
  * TO DO:
-    1. add stop watch
-    2. add unordered_map and compare
     3. compare timings/collisions number for many different hash functions/primes/
        optimisation techniques
     4. Choose the best one and use as reference to cuckoo hashing :)
@@ -412,7 +447,7 @@ static void benchmark()
     assert(stl_map.size() == 0);
     assert(stl_unordered_map.size() == 0);
 
-    config basic_config;
+    common::config basic_config;
     basic_config.mark = false;
 
     printf("\n%s\n\n", __FUNCTION__);
