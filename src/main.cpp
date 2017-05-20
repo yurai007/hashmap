@@ -72,6 +72,48 @@
      We have many different hash functions so it's necessary otherwise mess will happen.
      Limited_linear_hash is default now.
      After refactoring timings are the same.
+
+ * iteration 4.
+  - real_test_case_only_hashmap shows content of hashmap and gather statistics about islands
+  - for limited_linear_hash_prime policy:
+
+    hashmap capacity = 100000, operations_number = 190000, uniwersum_size = 1000000000
+    Summary
+    inserts = 94762, members = 95238, hits = 4, hashmap.size = 94756
+    hashmap.collisions = 2640501, colisions per insert = 27
+    hashmap.islands = 3198, hashmap.sum = 94755, avg length = 29, max len = 2250
+
+  - for limited_quadratic_hash policy:
+
+    hashmap capacity = 100000, operations_number = 190000, uniwersum_size = 1000000000
+    Summary
+    inserts = 94851, members = 95149, hits = 3, hashmap.size = 94848
+    hashmap.collisions = 731920, colisions per insert = 7
+    hashmap.islands = 4855, hashmap.sum = 94847, avg length = 19, max len = 352
+
+    So distribution of elements for quadratic probing is much better then for linear -
+    more much shorter islands, dumps confirms this.
+
+  - Limited_linear_hash_prime vs Limited_quadratic_hash in benchmark.
+
+    Thanks to much lower 'colisions per insert' for limited_quadratic_hash we have fastest hashmap so far:
+
+    benchmark
+
+    operations_number = 3800000, uniwersum_size = 1000000000
+    Preprocess data
+    Hashmap start watch
+    Hashmap stop watch: Time = 296 ms.
+    STL Map start watch
+    STL Map stop watch: Time = 3029 ms.
+    STL Unordered Map start watch
+    STL Unordered Map stop watch: Time = 859 ms.
+    Summary
+    inserts = 1899862, members = 1900138, hits = 1831, stl hits = 1831, hashmap.size = 1897985, stl map size = 1897985
+    hashmap.collisions = 14806907, colisions per insert = 7
+    OK :)
+
+    Now my hashmpa is ~10x faster then std::map and ~3x faster then std::unordered_map. WOW :)
  */
 
 namespace common
@@ -127,10 +169,6 @@ public:
 
 	static int h(int k, int j, int m)
 	{
-		//assert(0 <= k && k <= 1000000000);
-		//assert(0 <= j && j <= 1000000000);
-		//assert(0 <= m && m <= 1000000000);
-		//assert(0 <= h1(k, m) && h1(k, m) <= 1000000000);
 		return (h1(k, m) + j)%m;
 	}
 
@@ -140,7 +178,51 @@ public:
     }
 };
 
-template<class Hash = Limited_linear_hash>
+constexpr int p = 100003;
+constexpr int a = 5;
+constexpr int b = 7;
+
+class Limited_linear_hash_prime final
+{
+public:
+    static int h1(int x, int m)
+    {
+        return ((a*x + b) % p) % m;
+    }
+
+	static int h(int k, int j, int m)
+	{
+		return (h1(k, m) + j)%m;
+	}
+
+    static int hash(config &c, int m)
+    {
+        return c.content % m;
+    }
+};
+
+/*
+ */
+class Limited_quadratic_hash final
+{
+public:
+    static int h1(int x, int m)
+    {
+        return x % m;
+    }
+
+	static int h(int k, int j, int m)
+	{
+		return (h1(k, m) + j + j*j)%m;
+	}
+
+    static int hash(config &c, int m)
+    {
+        return c.content % m;
+    }
+};
+
+template<class Hash = Limited_quadratic_hash>
 class Hashmap final
 {
 public:
@@ -181,6 +263,11 @@ public:
         return n;
     }
 
+    unsigned capacity() const
+    {
+        return table.size();
+    }
+
     void reset()
     {
         n = 0;
@@ -212,6 +299,7 @@ protected:
     }
 
     unsigned n {0};
+public:
     std::vector<config> table;
 };
 
@@ -324,8 +412,8 @@ static void real_test_case()
     std::vector<std::pair<int, int>> hashmap_log, stl_map_log;
 
     printf("\n%s\n\n", __FUNCTION__);
-    printf("operations_number = %u, uniwersum_size = %u\n", operations_number,
-           uniwersum_size);
+    printf("hashmap capacity = %u, operations_number = %u, uniwersum_size = %u\n",
+           hashmap.capacity(), operations_number, uniwersum_size);
 
     srand(time(nullptr));
 
@@ -391,6 +479,102 @@ static void real_test_case()
     {
         assert(hashmap_log[i].first == stl_map_log[i].first);
         assert(hashmap_log[i].second == stl_map_log[i].second);
+    }
+    printf("OK :)\n");
+}
+
+}
+
+namespace hashmap_tests
+{
+
+common::Hashmap<> hashmap(100000);
+
+static inline char get_operation()
+{
+    return (rand()%2 == 1)? 'I' : 'M';
+}
+
+static void real_test_case_only_hashmap()
+{
+    constexpr unsigned operations_number {190000};
+    constexpr unsigned uniwersum_size {1000000000};
+    constexpr bool dump {false};
+
+    unsigned inserts_counter {0};
+    unsigned members_counter {0};
+    unsigned members_hits {0};
+
+    hashmap.reset();
+
+    assert(hashmap.size() == 0);
+
+    common::config basic_config;
+    basic_config.mark = false;
+
+    printf("\n%s\n\n", __FUNCTION__);
+    printf("hashmap capacity = %u, operations_number = %u, uniwersum_size = %u\n",
+           hashmap.capacity(), operations_number, uniwersum_size);
+
+    srand(time(nullptr));
+
+    for (unsigned i = 0; i < operations_number; i++)
+    {
+        const char operation = get_operation();
+
+        if (operation == 'I')
+        {
+            basic_config.content = (rand()%uniwersum_size);
+            hashmap.insert(basic_config);
+            assert(hashmap.member(basic_config));
+            inserts_counter++;
+        }
+        else
+            if (operation == 'M')
+            {
+                basic_config.content = (rand()%uniwersum_size);
+                bool hit = hashmap.member(basic_config);
+                if (hit)
+                    members_hits++;
+                members_counter++;
+            }
+    }
+
+    printf("Summary\n");
+    printf("inserts = %d, members = %d, hits = %d, hashmap.size = %d\n",
+           inserts_counter, members_counter, members_hits, hashmap.size());
+    printf("hashmap.collisions = %d, colisions per insert = %d\n", hashmap.collisions,
+           (hashmap.collisions/inserts_counter));
+
+    unsigned i = 0, number = 0, max_len = 0;
+    uint64_t sum = 0;
+    for (; i < hashmap.table.size();)
+    {
+        unsigned base = i;
+        while ((i < hashmap.table.size()) && !hashmap.table[i++].is_empty());
+
+        unsigned len = i-base-1;
+        if (!hashmap.table[base].is_empty())
+        {
+            sum += len;
+            number++;
+
+            if (len > max_len)
+                max_len = len;
+        }
+    }
+
+    printf("hashmap.islands = %u, hashmap.sum = %lu, avg length = %lu, max len = %u\n", number, sum,
+           (sum/number), max_len);
+
+    if (dump)
+    {
+        for (unsigned j = 0; j < hashmap.table.size(); j++)
+        {
+            printf("%u", (!hashmap.table[j].is_empty()));
+            if (j % 250 == 0)
+                printf("\n");
+        }
     }
     printf("OK :)\n");
 }
@@ -571,6 +755,7 @@ int main()
 {
     basics::basic_test_case();
     real_tests::real_test_case();
+    hashmap_tests::real_test_case_only_hashmap();
     benchmarks::benchmark();
     return 0;
 }
