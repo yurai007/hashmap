@@ -7,6 +7,7 @@
 #include <map>
 #include <unordered_map>
 #include <algorithm>
+#include <cmath>
 
 /*
  * iteration 0.
@@ -114,12 +115,60 @@
     OK :)
 
     Now my hashmpa is ~10x faster then std::map and ~3x faster then std::unordered_map. WOW :)
+
+  * iteration 5.
+  - add extra Double_hash.
+
+    hashmap capacity = 100003, operations_number = 190000, uniwersum_size = 1000000000
+    Summary
+    inserts = 94814, members = 95186, hits = 3, hashmap.size = 94810
+    hashmap.collisions = 759955, colisions per insert = 8
+    hashmap.islands = 4925, hashmap.sum = 94810, avg length = 19, max len = 202
+
+    In terms of islands: number of islands and maximal island length are slightly better then for quadratic hash.
+
+  - real_test_case_theory_vs_practice.
+    Scenario - freeze hashmap with arbitrary set alfa and perform many search operations.
+            With record_hits = false we test case when key is NOT in dictionary (with very high probability).
+            With record_hits = true we test case when key IS in dictionary (wth probability = 1).
+    During tests we collect comparisions number and compare with theoretical expected comparisions number.
+
+    Because comparisions = collisions+1 I had to do extra collisions++; on the end of process_search.
+
+    KEY IS IN HASHMAP
+
+    real_test_case_theory_vs_practice
+    Linear alpha = 0.849985, quadratic alpha = 0.849985, double alpha = 0.849985
+    Measured: Linear comparisions per search = 3.756040, quadratic comparisions per search = 2.469440,double comparisions per search = 2.493920
+    Theory: Linear comparisions per search = 3.833334, quadratic comparisions per search = 0.000000,double comparisions per search = 2.231906
+
+    real_test_case_theory_vs_practice
+    Linear alpha = 0.949971, quadratic alpha = 0.949971, double alpha = 0.949971
+    Measured: Linear comparisions per search = 10.854580, quadratic comparisions per search = 3.601860,double comparisions per search = 3.637720
+    Theory: Linear comparisions per search = 10.499998, quadratic comparisions per search = 0.000000,double comparisions per search = 3.153402
+
+    KEY IS NOT IN HASHMAP
+
+    real_test_case_theory_vs_practice
+    Linear alpha = 0.849975, quadratic alpha = 0.849975, double alpha = 0.849975
+    Measured: Linear comparisions per search = 21.083759, quadratic comparisions per search = 7.843280,double comparisions per search = 8.182100
+    Theory: Linear comparisions per search = 22.722229, quadratic comparisions per search = 0.000000,double comparisions per search = 6.666668
+
+    real_test_case_theory_vs_practice
+    Linear alpha = 0.949971, quadratic alpha = 0.949971, double alpha = 0.949971
+    Measured: Linear comparisions per search = 149.973877, quadratic comparisions per search = 24.930901,double comparisions per search = 24.391979
+    Theory: Linear comparisions per search = 200.499908, quadratic comparisions per search = 0.000000,double comparisions per search = 19.999996
+
+    Results:
+    1. Theoretical avaerage number of comparisions is very accurate in most cases.
+    2. In such scenarios I don't see clear advantage Double_hash over Limited_quadratic_hash. From the other side Limited_quadratic_hash is much faster
+       (no overflows = no long longs).
  */
 
 namespace common
 {
 
-constexpr int INF = -1;
+constexpr int INF {-1};
 
 struct config
 {
@@ -178,9 +227,9 @@ public:
     }
 };
 
-constexpr int p = 100003;
-constexpr int a = 5;
-constexpr int b = 7;
+constexpr int p {100003};
+constexpr int a {5};
+constexpr int b {7};
 
 class Limited_linear_hash_prime final
 {
@@ -214,6 +263,33 @@ public:
 	static int h(int k, int j, int m)
 	{
 		return (h1(k, m) + j + j*j)%m;
+	}
+
+    static int hash(config &c, int m)
+    {
+        return c.content % m;
+    }
+};
+
+/*
+ * Here it's required that m is prime number.
+ */
+class Double_hash final
+{
+public:
+    static int h1(int x, int m)
+    {
+        return x % m;
+    }
+
+    static int h2(int x, int m)
+    {
+        return 1 + x%(m-1);
+    }
+
+	static int h(int k, long long int j, int m)
+	{
+		return int( ( (long long)(h1(k, m)) + j*(long long)(h2(k, m))  )%m );
 	}
 
     static int hash(config &c, int m)
@@ -326,6 +402,7 @@ static void basic_test_case()
     constexpr unsigned uniwersum_size {100};
     unsigned inserts_counter {0};
     unsigned members_counter {0};
+    constexpr bool debug {false};
 
     unsigned members_hits {0};
     unsigned stl_members_hits {0};
@@ -350,7 +427,8 @@ static void basic_test_case()
 
             inserts_counter++;
 
-            printf("insert = %d\n", basic_config.content);
+            if (debug)
+                printf("insert = %d\n", basic_config.content);
         }
         else
             if (operation == 'M')
@@ -365,9 +443,12 @@ static void basic_test_case()
 
                 members_counter++;
 
-                printf("member = %d, hit = %d\n", basic_config.content, hit);
-                printf("member = %d, hit = %d STL\n", basic_config.content,
-                       (stl_iter != stl_map.end()));
+                if (debug)
+                {
+                    printf("member = %d, hit = %d\n", basic_config.content, hit);
+                    printf("member = %d, hit = %d STL\n", basic_config.content,
+                           (stl_iter != stl_map.end()));
+                }
             }
     }
     printf("inserts = %d, members = %d, hits = %d, stl hits = %d\n",
@@ -380,7 +461,7 @@ static void basic_test_case()
 namespace real_tests
 {
 
-common::Hashmap<> hashmap(100000);
+common::Hashmap<> hashmap(100003);
 std::map<int, common::config> stl_map;
 
 static inline char get_operation()
@@ -485,10 +566,11 @@ static void real_test_case()
 
 }
 
+
 namespace hashmap_tests
 {
 
-common::Hashmap<> hashmap(100000);
+common::Hashmap<> hashmap(100003);
 
 static inline char get_operation()
 {
@@ -579,13 +661,102 @@ static void real_test_case_only_hashmap()
     printf("OK :)\n");
 }
 
+static void real_test_case_theory_vs_practice(float alpha, bool record_hits)
+{
+    printf("\n%s\n\n", __FUNCTION__);
+
+    constexpr unsigned capacity {100003};
+    constexpr unsigned search_num {50000};
+    constexpr unsigned uniwersum_size {1000000000};
+
+    common::Hashmap<common::Limited_linear_hash> linear_hashmap(capacity);
+    common::Hashmap<common::Limited_quadratic_hash> quadratic_hashmap(capacity);
+    common::Hashmap<common::Double_hash> double_hashmap(capacity);
+
+    common::config basic_config;
+    basic_config.mark = false;
+    std::vector<int> log_hits;
+
+    srand(time(nullptr));
+
+    // only inserts;
+    unsigned inserts = (alpha*capacity*1.0f);
+    for (unsigned i = 0; i < inserts; i++)
+    {
+        basic_config.content = (rand()%uniwersum_size);
+        if (record_hits)
+            log_hits.push_back(basic_config.content);
+        linear_hashmap.insert(basic_config);
+        quadratic_hashmap.insert(basic_config);
+        double_hashmap.insert(basic_config);
+    }
+
+    printf("Linear alpha = %f, quadratic alpha = %f, double alpha = %f\n",
+           (linear_hashmap.size()*1.0f/capacity),
+           (quadratic_hashmap.size()*1.0f/capacity),
+           (double_hashmap.size()*1.0f/capacity));
+
+    // only search;Here collisions as comparisions number.
+    linear_hashmap.collisions = 0;
+    quadratic_hashmap.collisions = 0;
+    double_hashmap.collisions = 0;
+    unsigned members_hits = 0;
+    for (unsigned i = 0; i < search_num; i++)
+    {
+        if (!record_hits)
+            basic_config.content = (rand()%uniwersum_size);
+        else
+        {
+            unsigned index = (rand()%log_hits.size());
+            basic_config.content = log_hits[index];
+        }
+        bool hit = linear_hashmap.member(basic_config);
+        if (hit)
+            members_hits++;
+        hit = quadratic_hashmap.member(basic_config);
+        if (hit)
+            members_hits++;
+        hit = double_hashmap.member(basic_config);
+        if (hit)
+            members_hits++;
+    }
+
+    printf("Measured:\n");
+    printf("Linear comparisions per search = %f, quadratic comparisions per search = %f,"
+           "double comparisions per search = %f\n",
+           (linear_hashmap.collisions*1.0f/search_num),
+           (quadratic_hashmap.collisions*1.0f/search_num),
+           (double_hashmap.collisions*1.0f/search_num));
+    printf("%u\n", members_hits);
+
+    printf("Theory:\n");
+
+    if (!record_hits)
+    {
+        const float linear_comp = 0.5f + 1.0f/(2.0f*(1.0f-alpha)*(1.0f-alpha));
+        const float double_comp = 1.0f/(1.0f - alpha);
+        printf("Linear comparisions per search = %f, quadratic comparisions per search = %f,"
+               "double comparisions per search = %f\n",
+               linear_comp, 0.0f, double_comp);
+    }
+    else
+    {
+        const float linear_comp = 0.5f + 1.0f/(2.0f*(1.0f-alpha));
+        const float double_comp = (-1.0f/alpha)*log(1.0f - alpha);
+        printf("Linear comparisions per search = %f, quadratic comparisions per search = %f,"
+               "double comparisions per search = %f\n",
+               linear_comp, 0.0f, double_comp);
+    }
+    printf(":)");
+}
+
 }
 
 
 namespace benchmarks
 {
 
-common::Hashmap<> hashmap(2000000);
+common::Hashmap<> hashmap(2000003);
 std::map<int, common::config> stl_map;
 std::unordered_map<int, common::config> stl_unordered_map;
 
@@ -606,8 +777,6 @@ static inline char get_operation()
 /* This benchmark test only I+M.
  *
  * TO DO:
-    3. compare timings/collisions number for many different hash functions/primes/
-       optimisation techniques
     4. Choose the best one and use as reference to cuckoo hashing :)
     5. Delete?
  */
@@ -754,6 +923,16 @@ static void benchmark()
 int main()
 {
     basics::basic_test_case();
+    hashmap_tests::real_test_case_theory_vs_practice(0.65f, false);
+    hashmap_tests::real_test_case_theory_vs_practice(0.75f, false);
+    hashmap_tests::real_test_case_theory_vs_practice(0.85f, false);
+    hashmap_tests::real_test_case_theory_vs_practice(0.95f, false);
+
+    hashmap_tests::real_test_case_theory_vs_practice(0.65f, true);
+    hashmap_tests::real_test_case_theory_vs_practice(0.75f, true);
+    hashmap_tests::real_test_case_theory_vs_practice(0.85f, true);
+    hashmap_tests::real_test_case_theory_vs_practice(0.95f, true);
+
     real_tests::real_test_case();
     hashmap_tests::real_test_case_only_hashmap();
     benchmarks::benchmark();
