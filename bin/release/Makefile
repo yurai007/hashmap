@@ -1,12 +1,17 @@
-CXXFLAGS = -Wall -W -g -Ofast -std=c++14 -Wshadow -Wformat-security -fconcepts 
+CXXFLAGS = -Wall -W -g -Ofast -std=c++14 -Wshadow -Wformat-security -fconcepts -msse4.1 
 LDFLAGS = 
 CXX := g++
 
-all: ../../src/main.cpp 
-	$(CXX) $(CXXFLAGS) ../../src/main.cpp -o main $(LDFLAGS)
+correctness_tests: ../../src/correctness_tests.cpp
+	$(CXX) $(CXXFLAGS) ../../src/correctness_tests.cpp -o correctness_tests $(LDFLAGS)
+
+speed_tests: ../../src/speed_tests.cpp 
+	$(CXX) $(CXXFLAGS) ../../src/speed_tests.cpp -o speed_tests $(LDFLAGS)
+
+all: correctness_tests speed_tests
 
 clean:
-	rm -rf main
+	rm -rf correctness_tests speed_tests
 
 distclean: clean
 

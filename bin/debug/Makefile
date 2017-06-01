@@ -1,12 +1,17 @@
-CXXFLAGS = -Wall -W -g -std=c++14 -fstack-protector -Wshadow -Wformat-security -fconcepts -fsanitize=address -fsanitize-recover=address -fsanitize=undefined -fsanitize=vptr
+CXXFLAGS = -Wall -W -g -std=c++14 -fstack-protector -Wshadow -Wformat-security -fconcepts -fsanitize=address -fsanitize-recover=address -fsanitize=undefined -fsanitize=vptr -msse4.1
 LDFLAGS = 
 CXX := g++
 
-all: ../../src/main.cpp 
-	$(CXX) $(CXXFLAGS) ../../src/main.cpp -o main $(LDFLAGS)
+correctness_tests: ../../src/correctness_tests.cpp
+	$(CXX) $(CXXFLAGS) ../../src/correctness_tests.cpp -o correctness_tests $(LDFLAGS)
+
+speed_tests: ../../src/speed_tests.cpp 	
+	$(CXX) $(CXXFLAGS) ../../src/speed_tests.cpp -o speed_tests $(LDFLAGS)
+
+all: correctness_tests speed_tests
 
 clean:
-	rm -rf main
+	rm -rf correctness_tests speed_tests
 
 distclean: clean
 
