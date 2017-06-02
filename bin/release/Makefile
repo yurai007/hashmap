@@ -8,10 +8,13 @@ correctness_tests: ../../src/correctness_tests.cpp
 speed_tests: ../../src/speed_tests.cpp 
 	$(CXX) $(CXXFLAGS) ../../src/speed_tests.cpp -o speed_tests $(LDFLAGS)
 
-all: correctness_tests speed_tests
+sstring: ../../src/sstring.cpp
+	$(CXX) $(CXXFLAGS) ../../src/sstring.cpp -o sstring $(LDFLAGS)
+
+all: correctness_tests speed_tests sstring
 
 clean:
-	rm -rf correctness_tests speed_tests
+	rm -rf correctness_tests speed_tests sstring
 
 distclean: clean
 
