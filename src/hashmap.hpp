@@ -232,48 +232,50 @@ To
        0.454340974 seconds time elapsed
 
 
-basic_test_case
+    basic_test_case
 
-operations_number = 100
-inserts = 47, members = 53, hits = 8, stl hits = 8
+    operations_number = 100
+    inserts = 47, members = 53, hits = 8, stl hits = 8
 
-real_test_case_theory_vs_practice
+    real_test_case_theory_vs_practice
 
-Linear alpha = 0.649961, quadratic alpha = 0.649961, double alpha = 0.649961
-Measured:
-Linear comparisions per search = 3.582680, quadratic comparisions per search = 2.233240,double comparisions per search = 2.298640
-24
-Theory:
-Linear comparisions per search = 4.581632, quadratic comparisions per search = 0.000000,double comparisions per search = 2.857143
-:)
-real_test_case_theory_vs_practice
+    Linear alpha = 0.649961, quadratic alpha = 0.649961, double alpha = 0.649961
+    Measured:
+    Linear comparisions per search = 3.582680, quadratic comparisions per search = 2.233240,double comparisions per search = 2.298640
+    24
+    Theory:
+    Linear comparisions per search = 4.581632, quadratic comparisions per search = 0.000000,double comparisions per search = 2.857143
+    :)
+    real_test_case_theory_vs_practice
 
-Linear alpha = 0.749928, quadratic alpha = 0.749928, double alpha = 0.749928
-Measured:
-Linear comparisions per search = 7.517800, quadratic comparisions per search = 3.686060,double comparisions per search = 3.787540
-18
-Theory:
-Linear comparisions per search = 8.500000, quadratic comparisions per search = 0.000000,double comparisions per search = 4.000000
-:)
-real_test_case_theory_vs_practice
+    Linear alpha = 0.749928, quadratic alpha = 0.749928, double alpha = 0.749928
+    Measured:
+    Linear comparisions per search = 7.517800, quadratic comparisions per search = 3.686060,double comparisions per search = 3.787540
+    18
+    Theory:
+    Linear comparisions per search = 8.500000, quadratic comparisions per search = 0.000000,double comparisions per search = 4.000000
+    :)
+    real_test_case_theory_vs_practice
 
-Linear alpha = 0.849914, quadratic alpha = 0.849914, double alpha = 0.849914
-Measured:
-Linear comparisions per search = 21.389420, quadratic comparisions per search = 7.129440,double comparisions per search = 7.311160
-18
-Theory:
-Linear comparisions per search = 22.722229, quadratic comparisions per search = 0.000000,double comparisions per search = 6.666668
-:)
-real_test_case_theory_vs_practice
+    Linear alpha = 0.849914, quadratic alpha = 0.849914, double alpha = 0.849914
+    Measured:
+    Linear comparisions per search = 21.389420, quadratic comparisions per search = 7.129440,double comparisions per search = 7.311160
+    18
+    Theory:
+    Linear comparisions per search = 22.722229, quadratic comparisions per search = 0.000000,double comparisions per search = 6.666668
+    :)
+    real_test_case_theory_vs_practice
 
-Linear alpha = 0.949902, quadratic alpha = 0.949902, double alpha = 0.949902
-Measured:
-Linear comparisions per search = 205.778305, quadratic comparisions per search = 24.956120,double comparisions per search = 23.382900
-21
-Theory:
-Linear comparisions per search = 200.499908, quadratic comparisions per search = 0.000000,double comparisions per search = 19.999996
-:)Press <RETURN> to close this window...
+    Linear alpha = 0.949902, quadratic alpha = 0.949902, double alpha = 0.949902
+    Measured:
+    Linear comparisions per search = 205.778305, quadratic comparisions per search = 24.956120,double comparisions per search = 23.382900
+    21
+    Theory:
+    Linear comparisions per search = 200.499908, quadratic comparisions per search = 0.000000,double comparisions per search = 19.999996
+    :)Press <RETURN> to close this window...
 
+   * iteration 6:
+     - fast_member is experimental
 
 
  */
@@ -299,6 +301,128 @@ struct config
     }
 } __attribute__((packed));
 
+
+class Linear_hash;
+class Limited_quadratic_hash;
+class Limited_linear_hash;
+class Limited_linear_hash_prime;
+class Double_hash;
+
+struct Iter0;
+struct Iter1;
+struct Iter4_Broken_But_Fast;
+struct Iter3;
+
+
+template<class Hash = Limited_quadratic_hash>
+class Hashmap final
+{
+public:
+    Hashmap(int size)
+    {
+        config c = {INF, false};
+        table.assign(size, c);
+    }
+
+    void insert(config &c)
+    {
+        const int i = process_search__false(c);
+        if (table[i].content != c.content)
+        {
+            table[i] = c;
+            n++;
+        }
+    }
+
+    void erase(config &c)
+    {
+        const int i = process_search__true(c);
+        if (table[i] == c)
+        {
+            c.mark = true;
+            n--;
+        }
+    }
+
+    bool member(config &c)
+    {
+        int i = process_search__true(c);
+        return (table[i].content == c.content);
+    }
+
+    template<class Func = Iter3>
+    bool fast_member(config &c)
+    {
+        int i = 0;
+        if (n > (4*table.size()/5))
+        {
+            i = Func::process_search__true__optimized(table, c);
+        }
+        else
+        {
+            i = process_search__true(c);
+        }
+        return (table[i].content == c.content);
+    }
+
+    unsigned size() const
+    {
+        return n;
+    }
+
+    unsigned capacity() const
+    {
+        return table.size();
+    }
+
+    void reset()
+    {
+        n = 0;
+        config c = {INF, false};
+        std::fill(table.begin(), table.end(), c);
+    }
+
+    unsigned collisions {0};
+
+protected:
+
+    int process_search__true(config &c)
+    {
+        const int m = table.size();
+        const int hash_config = Hash::hash(c, m);
+        int j = 0;
+        int i = Hash::h(hash_config, j, m);
+
+        while ( (table[i].content != c.content) && (table[i].content >= 0))
+        {
+            j++;
+            i = Hash::h(hash_config, j, m);
+            collisions++;
+        }
+        return i;
+    }
+
+    int process_search__false(config &c)
+    {
+        const int m = table.size();
+        const int hash_config = Hash::hash(c, m);
+        int j = 0;
+        int i = Hash::h(hash_config, j, m);
+
+        while ( (table[i].content != c.content) && (table[i].content >= 0) && !table[i].mark)
+        {
+            j++;
+            i = Hash::h(hash_config, j, m);
+            collisions++;
+        }
+        return i;
+    }
+
+    unsigned n {0};
+public:
+    std::vector<config> table;
+};
+
 class Linear_hash final
 {
 public:
@@ -311,6 +435,21 @@ public:
     {
         return int( ( (long long)(h1(k, m)) + (long long)(j)  )%m );
     }
+
+    static int hash(config &c, int m)
+    {
+        return c.content % m;
+    }
+};
+
+class Limited_quadratic_hash final
+{
+public:
+
+	static int h(int k, int j, int m)
+	{
+		return (k + j + j*j)%m;
+	}
 
     static int hash(config &c, int m)
     {
@@ -355,23 +494,6 @@ public:
 	static int h(int k, int j, int m)
 	{
 		return (h1(k, m) + j)%m;
-	}
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
-};
-
-/*
- */
-class Limited_quadratic_hash final
-{
-public:
-
-	static int h(int k, int j, int m)
-	{
-		return (k + j + j*j)%m;
 	}
 
     static int hash(config &c, int m)
@@ -592,114 +714,6 @@ struct Iter3
     }
 };
 
-template<class Hash = Limited_quadratic_hash>
-class Hashmap final
-{
-public:
-    Hashmap(int size)
-    {
-        config c = {INF, false};
-        table.assign(size, c);
-    }
-
-    void insert(config &c)
-    {
-        const int i = process_search__false(c);
-        if (table[i].content != c.content)
-        {
-            table[i] = c;
-            n++;
-        }
-    }
-
-    void erase(config &c)
-    {
-        const int i = process_search__true(c);
-        if (table[i] == c)
-        {
-            c.mark = true;
-            n--;
-        }
-    }
-
-    bool member(config &c)
-    {
-        int i = process_search__true(c);
-        return (table[i].content == c.content);
-    }
-
-    template<class Func = Iter3>
-    bool fast_member(config &c)
-    {
-        int i = 0;
-        if (n > (4*table.size()/5))
-        {
-            i = Func::process_search__true__optimized(table, c);
-        }
-        else
-        {
-            i = process_search__true(c);
-        }
-        return (table[i].content == c.content);
-    }
-
-    unsigned size() const
-    {
-        return n;
-    }
-
-    unsigned capacity() const
-    {
-        return table.size();
-    }
-
-    void reset()
-    {
-        n = 0;
-        config c = {INF, false};
-        std::fill(table.begin(), table.end(), c);
-    }
-
-    unsigned collisions {0};
-
-protected:
-
-    int process_search__true(config &c)
-    {
-        const int m = table.size();
-        const int hash_config = Hash::hash(c, m);
-        int j = 0;
-        int i = Hash::h(hash_config, j, m);
-
-        while ( (table[i].content != c.content) && (table[i].content >= 0))
-        {
-            j++;
-            i = Hash::h(hash_config, j, m);
-            collisions++;
-        }
-        return i;
-    }
-
-    int process_search__false(config &c)
-    {
-        const int m = table.size();
-        const int hash_config = Hash::hash(c, m);
-        int j = 0;
-        int i = Hash::h(hash_config, j, m);
-
-        while ( (table[i].content != c.content) && (table[i].content >= 0) && !table[i].mark)
-        {
-            j++;
-            i = Hash::h(hash_config, j, m);
-            collisions++;
-        }
-        return i;
-    }
-
-    unsigned n {0};
-public:
-    std::vector<config> table;
-};
 
 
 //// optimized when  quadratic alpha > 0.85 =>  avg quadratic comparisions per search ~ 7

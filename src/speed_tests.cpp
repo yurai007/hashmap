@@ -446,12 +446,13 @@ static void benchmark__only_hashmap_basic_for_member()
 
 int main()
 {
-//    benchmarks::benchmark__only_hashmap();
+    benchmarks::benchmark();
+  //  benchmarks::sstring_benchmark__only_hashmap();
 
-    benchmarks::test_intrinsics1();
-    benchmarks::test_intrinsics2();
-    benchmarks::test_intrinsics3();
+//    benchmarks::test_intrinsics1();
+//    benchmarks::test_intrinsics2();
+//    benchmarks::test_intrinsics3();
 
-    benchmarks::benchmark__only_hashmap_basic_for_member();
+//    benchmarks::benchmark__only_hashmap_basic_for_member();
     return 0;
 }
