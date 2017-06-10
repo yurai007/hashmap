@@ -285,22 +285,31 @@ namespace common
 
 constexpr int INF {-1};
 
-struct config
+struct int_holder final
 {
     int content;
     bool mark;
 
-    bool is_empty()
+    void init_as_empty()
+    {
+        content = INF;
+    }
+
+    bool is_empty() const
     {
         return content == INF;
     }
 
-    bool operator==(const config& cp)
+    bool operator==(const int_holder& holder)
     {
-        return (content == cp.content);
+        return (content == holder.content);
+    }
+
+    static int hash(const int_holder& holder, int m)
+    {
+        return holder.content % m;
     }
 } __attribute__((packed));
-
 
 class Linear_hash;
 class Limited_quadratic_hash;
@@ -311,30 +320,36 @@ class Double_hash;
 struct Iter0;
 struct Iter1;
 struct Iter4_Broken_But_Fast;
+
+template<unsigned>
 struct Iter3;
 
-
-template<class Hash = Limited_quadratic_hash>
-class Hashmap final
+template<unsigned Size,
+         class Holder = int_holder,
+         class Hash = Limited_quadratic_hash>
+class Hashmap
 {
 public:
-    Hashmap(int size)
+    Hashmap()
     {
-        config c = {INF, false};
-        table.assign(size, c);
+        for (auto &e : table)
+        {
+            e.mark = false;
+            e.init_as_empty();
+        }
     }
 
-    void insert(config &c)
+    void insert(Holder &c)
     {
         const int i = process_search__false(c);
-        if (table[i].content != c.content)
+        if (!(table[i] == c))
         {
-            table[i] = c;
+            table[i] = std::move(c);
             n++;
         }
     }
 
-    void erase(config &c)
+    void erase(Holder &c)
     {
         const int i = process_search__true(c);
         if (table[i] == c)
@@ -344,25 +359,10 @@ public:
         }
     }
 
-    bool member(config &c)
+    bool member(Holder &c)
     {
         int i = process_search__true(c);
-        return (table[i].content == c.content);
-    }
-
-    template<class Func = Iter3>
-    bool fast_member(config &c)
-    {
-        int i = 0;
-        if (n > (4*table.size()/5))
-        {
-            i = Func::process_search__true__optimized(table, c);
-        }
-        else
-        {
-            i = process_search__true(c);
-        }
-        return (table[i].content == c.content);
+        return (table[i] == c);
     }
 
     unsigned size() const
@@ -378,41 +378,44 @@ public:
     void reset()
     {
         n = 0;
-        config c = {INF, false};
-        std::fill(table.begin(), table.end(), c);
+        for (auto &e : table)
+        {
+            e.mark = false;
+            e.init_as_empty();
+        }
     }
 
     unsigned collisions {0};
 
 protected:
 
-    int process_search__true(config &c)
+    int process_search__true(Holder &c)
     {
         const int m = table.size();
-        const int hash_config = Hash::hash(c, m);
+        const int hash_holder = Holder::hash(c, m);
         int j = 0;
-        int i = Hash::h(hash_config, j, m);
+        int i = Hash::h(hash_holder, j, m);
 
-        while ( (table[i].content != c.content) && (table[i].content >= 0))
+        while ( !(table[i] == c) && (!table[i].is_empty()))
         {
             j++;
-            i = Hash::h(hash_config, j, m);
+            i = Hash::h(hash_holder, j, m);
             collisions++;
         }
         return i;
     }
 
-    int process_search__false(config &c)
+    int process_search__false(Holder &c)
     {
         const int m = table.size();
-        const int hash_config = Hash::hash(c, m);
+        const int hash_holder = Holder::hash(c, m);
         int j = 0;
-        int i = Hash::h(hash_config, j, m);
+        int i = Hash::h(hash_holder, j, m);
 
-        while ( (table[i].content != c.content) && (table[i].content >= 0) && !table[i].mark)
+        while ( !(table[i] == c) && (!table[i].is_empty()) && !table[i].mark)
         {
             j++;
-            i = Hash::h(hash_config, j, m);
+            i = Hash::h(hash_holder, j, m);
             collisions++;
         }
         return i;
@@ -420,7 +423,35 @@ protected:
 
     unsigned n {0};
 public:
-    std::vector<config> table;
+    static_assert((Size == 2000003) || (Size == 200003) || (Size == 100003) || (Size == 500),
+                  "Size not supported");
+    std::array<Holder, Size> table;
+};
+
+template<unsigned Size, class Hash = Limited_quadratic_hash>
+class ExperimentalHashmap final : public Hashmap<Size, Hash>
+{
+public:
+    using Hashmap<Size, Hash>::n;
+    using Hashmap<Size, Hash>::table;
+    using Hashmap<Size, Hash>::process_search__true;
+
+    template<
+            template<unsigned> class Func = Iter3
+            >
+    bool fast_member(int_holder &c)
+    {
+        int i = 0;
+        if (n > (4*table.size()/5))
+        {
+            i = Func<Size>::process_search__true__optimized(table, c);
+        }
+        else
+        {
+            i = process_search__true(c);
+        }
+        return (table[i] == c);
+    }
 };
 
 class Linear_hash final
@@ -435,11 +466,6 @@ public:
     {
         return int( ( (long long)(h1(k, m)) + (long long)(j)  )%m );
     }
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
 };
 
 class Limited_quadratic_hash final
@@ -450,11 +476,6 @@ public:
 	{
 		return (k + j + j*j)%m;
 	}
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
 };
 
 /*
@@ -472,11 +493,6 @@ public:
 	{
 		return (h1(k, m) + j)%m;
 	}
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
 };
 
 constexpr int p {100003};
@@ -495,11 +511,6 @@ public:
 	{
 		return (h1(k, m) + j)%m;
 	}
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
 };
 
 /*
@@ -522,11 +533,6 @@ public:
 	{
 		return int( ( (long long)(h1(k, m)) + j*(long long)(h2(k, m))  )%m );
 	}
-
-    static int hash(config &c, int m)
-    {
-        return c.content % m;
-    }
 };
 
 struct __attribute__ ((aligned (16))) hash_vec
@@ -541,17 +547,17 @@ struct __attribute__ ((aligned (16))) hash_uvec
 
 struct Iter0
 {
-    static int process_search__true__optimized(std::vector<config> &table, config &c)
+    static int process_search__true__optimized(std::vector<int_holder> &table, int_holder &c)
     {
         const int m = table.size();
-        const int hash_config = c.content % m;
+        const int hash_int_holder = c.content % m;
         int j = 0;
-        int i = (hash_config + j + j*j)%m;
+        int i = (hash_int_holder + j + j*j)%m;
 
         while ( (table[i].content != c.content) && (table[i].content >= 0))
         {
             j++;
-            i = (hash_config + j + j*j)%m;
+            i = (hash_int_holder + j + j*j)%m;
         }
         return i;
     }
@@ -559,19 +565,19 @@ struct Iter0
 
 struct Iter1
 {
-    static int process_search__true__optimized(std::vector<config> &table, config &c)
+    static int process_search__true__optimized(std::vector<int_holder> &table, int_holder &c)
     {
         const int m = table.size();
-        const int hash_config = c.content % m;
+        const int hash_int_holder = c.content % m;
         int j = 0;
-        int i = (hash_config + j + j*j)%m;
+        int i = (hash_int_holder + j + j*j)%m;
 
         int out = ~(table[i].content - c.content == 0) & ((table[i].content & 0x80000000) == 0);
 
         while (out != 0)
         {
             j++;
-            i = (hash_config + j + j*j)%m;
+            i = (hash_int_holder + j + j*j)%m;
             out = ~(table[i].content - c.content == 0) & ((table[i].content & 0x80000000) == 0);
         }
         return i;
@@ -582,7 +588,7 @@ struct Iter4_Broken_But_Fast
 {
     // optimized when  quadratic alpha > 0.85 =>  avg quadratic comparisions per search ~ 7
     // quadratic alpha > 0.75 => avg quadratic comparisions per search ~ 3.7
-    static int process_search__true__optimized(std::vector<config> &table, config &c)
+    static int process_search__true__optimized(std::vector<int_holder> &table, int_holder &c)
     {
         const int m = table.size();
         const int hc = c.content % m;
@@ -646,11 +652,12 @@ struct Iter4_Broken_But_Fast
     }
 };
 
-struct Iter3
+template<unsigned Size>
+struct Iter3 final
 {
     // optimized when  quadratic alpha > 0.85 =>  avg quadratic comparisions per search ~ 7
     // quadratic alpha > 0.75 => avg quadratic comparisions per search ~ 3.7
-    static int process_search__true__optimized(std::vector<config> &table, config &c)
+    static int process_search__true__optimized(std::array<int_holder, Size> &table, int_holder &c)
     {
         const int m = table.size();
         const int hc = c.content % m;
@@ -714,11 +721,9 @@ struct Iter3
     }
 };
 
-
-
 //// optimized when  quadratic alpha > 0.85 =>  avg quadratic comparisions per search ~ 7
 //// quadratic alpha > 0.75 => avg quadratic comparisions per search ~ 3.7
-//static int process_search__true__optimized__iter2(std::vector<config> &table, config &c)
+//static int process_search__true__optimized__iter2(std::vector<int_holder> &table, int_holder &c)
 //{
 //    const int m = table.size();
 //    const int hc = Hash::hash(c, m);
@@ -786,7 +791,7 @@ struct Iter3
 //}
 
 
-//static int process_search__true__optimized_iter1(std::vector<config> &table, config &c)
+//static int process_search__true__optimized_iter1(std::vector<int_holder> &table, int_holder &c)
 //{
 //    const int m = table.size();
 //    const int hc = Hash::hash(c, m);

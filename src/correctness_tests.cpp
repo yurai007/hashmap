@@ -3,8 +3,8 @@
 namespace basics
 {
 
-common::Hashmap<> hashmap(500);
-std::map<int, common::config> stl_map;
+common::Hashmap<500> hashmap;
+std::map<int, common::int_holder> stl_map;
 
 static inline char basic_get_operation()
 {
@@ -28,7 +28,7 @@ static void basic_test_case()
     hashmap.reset();
     stl_map.clear();
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
 
     printf("operations_number = %d\n", operations_number);
@@ -79,8 +79,8 @@ static void basic_test_case()
 namespace real_tests
 {
 
-common::Hashmap<> hashmap(100003);
-std::map<int, common::config> stl_map;
+common::Hashmap<100003> hashmap;
+std::map<int, common::int_holder> stl_map;
 
 static inline char get_operation()
 {
@@ -105,7 +105,7 @@ static void real_test_case()
     assert(hashmap.size() == 0);
     assert(stl_map.size() == 0);
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
 
     std::vector<std::pair<int, int>> hashmap_log, stl_map_log;
@@ -188,7 +188,7 @@ static void real_test_case()
 namespace hashmap_tests
 {
 
-common::Hashmap<> hashmap(100003);
+common::Hashmap<100003> hashmap;
 
 static inline char get_operation()
 {
@@ -209,7 +209,7 @@ static void real_test_case_only_hashmap()
 
     assert(hashmap.size() == 0);
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
 
     printf("\n%s\n\n", __FUNCTION__);
@@ -287,11 +287,11 @@ static void real_test_case_theory_vs_practice(float alpha, bool record_hits)
     constexpr unsigned search_num {50000};
     constexpr unsigned uniwersum_size {1000000000};
 
-    common::Hashmap<common::Limited_linear_hash> linear_hashmap(capacity);
-    common::Hashmap<common::Limited_quadratic_hash> quadratic_hashmap(capacity);
-    common::Hashmap<common::Double_hash> double_hashmap(capacity);
+    static common::Hashmap<capacity, common::int_holder, common::Limited_linear_hash> linear_hashmap;
+    static common::Hashmap<capacity, common::int_holder, common::Limited_quadratic_hash> quadratic_hashmap;
+    static common::Hashmap<capacity, common::int_holder, common::Double_hash> double_hashmap;
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
     std::vector<int> log_hits;
 

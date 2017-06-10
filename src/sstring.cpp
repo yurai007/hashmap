@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "hashmap.hpp"
+
 /*
   Motivation:
 
@@ -317,193 +319,50 @@ namespace hashing_benchmark
 
 constexpr int INF {-1};
 
-struct config
+struct sstring_holder final
 {
     sstrings::sstring<7> content;
     bool mark;
+
+    void init_as_empty()
+    {
+        content[0] = INF;
+    }
 
     bool is_empty()
     {
         return content[0] == INF;
     }
 
-	bool operator==(config& cp)
+	bool operator==(sstring_holder& holder)
 	{
 		for (int i = 0; i < 7; i++)
-		if (content[i] != cp.content[i])
+		if (content[i] != holder.content[i])
 			return false;
 		return true;
 	}
-//	bool operator==(const config& cp) const
+//	bool operator==(const sstring_holder& cp) const
 //	{
 //		return content == cp.content;
 //	}
-} __attribute__((packed));
-
-class SStringHash final
-{
-public:
-
-	static int h(int k, int j, int m)
-	{
-		return (k + j + j*j)%m;
-	}
-
-    static int hash(config &c, int m)
+    static int hash(sstring_holder& holder, int m)
     {
         int result = 0;
         int mul = 1;
         for (int i = 0; i < 7; i++)
         {
-            result = (result + (c.content[i]*mul) % m) % m ;
+            result = (result + (holder.content[i]*mul) % m) % m ;
             mul *= 10;
         }
         return result;
     }
+} __attribute__((packed));
 
-//    static int hash(config &c, int m)
-//    {
-//        int result = 0;
-//        result = (result + (c.content[0]*1) % m) % m ;
-//        result = (result + (c.content[1]*10) % m) % m ;
-//        result = (result + (c.content[2]*100) % m) % m ;
-//        result = (result + (c.content[3]*1000) % m) % m ;
-//        result = (result + (c.content[4]*10000) % m) % m ;
-//        result = (result + (c.content[5]*100000) % m) % m ;
-//        result = (result + (c.content[6]*1000000) % m) % m;
-//        return result;
-//    }
-};
 
-//class Limited_quadratic_hash final
-//{
-//public:
-
-//	static int h(int k, int j, int m)
-//	{
-//		return (k + j + j*j)%m;
-//	}
-
-//    static int hash(config &c, int m)
-//    {
-//        return c.content % m;
-//    }
-//};
-
-template<class Hash = SStringHash>
-class SStringHashmap final
-{
-public:
-    SStringHashmap(int size)
-    {
-        config c;
-        c.content[0] = INF;
-        c.mark = false;
-//        table.assign(size, c);
-//        table.reserve(size);
-
-//        std::memset(table.data(), 0, size*sizeof(config));
-//        std::fill(table.begin(), table.end(), c);
-
-        for (auto &e : table)
-        {
-            e.mark = false;
-            e.content[0] = INF;
-        }
-    }
-
-    void insert(config &c)
-    {
-        const int i = process_search__false(c);
-        if (!(table[i] == c))
-        {
-            table[i] = std::move(c);
-            n++;
-        }
-    }
-
-    void erase(config &c)
-    {
-        const int i = process_search__true(c);
-        if (table[i] == c)
-        {
-            c.mark = true;
-            n--;
-        }
-    }
-
-    bool member(config &c)
-    {
-        int i = process_search__true(c);
-        return (table[i] == c);
-    }
-
-    unsigned size() const
-    {
-        return n;
-    }
-
-    unsigned capacity() const
-    {
-        return table.size();
-    }
-
-    void reset()
-    {
-        n = 0;
-        //config c = {INF, false};
-        config c;
-        c.content[0] = INF;
-        c.mark = false;
-        //std::fill(table.begin(), table.end(), c);
-
-        for (auto &e : table)
-        {
-            e.mark = false;
-            e.content[0] = INF;
-        }
-    }
-
-    unsigned collisions {0};
-
-protected:
-
-    int process_search__true(config &c)
-    {
-        const int m = table.size();
-        const int hash_config = Hash::hash(c, m);
-        int j = 0;
-        int i = Hash::h(hash_config, j, m);
-
-        while ( !(table[i] == c) && (table[i].content[0] != INF))
-        {
-            j++;
-            i = Hash::h(hash_config, j, m);
-            collisions++;
-        }
-        return i;
-    }
-
-    int process_search__false(config &c)
-    {
-        const int m = table.size();
-        const int hash_config = Hash::hash(c, m);
-        int j = 0;
-        int i = Hash::h(hash_config, j, m);
-
-        while ( !(table[i] == c) && (table[i].content[0] != INF) && !table[i].mark)
-        {
-            j++;
-            i = Hash::h(hash_config, j, m);
-            collisions++;
-        }
-        return i;
-    }
-
-    unsigned n {0};
-public:
-    std::array<config, 2000003> table;
-};
+template<unsigned Size>
+using SStringHashmap = common::Hashmap<Size,
+                                       sstring_holder,
+                                       common::Limited_quadratic_hash>;
 
 static sstrings::sstring<7> rand_sstring(unsigned)
 {
@@ -684,7 +543,7 @@ static void sstring_benchmark__only_stl_unordered_map()
 
 static void sstring_benchmark__only_hashmap__iter2()
 {
-    static SStringHashmap<> hash_map(2000003);
+    static SStringHashmap<2000003> hash_map;
 
     constexpr unsigned string_max_size {7};
 
@@ -697,30 +556,30 @@ static void sstring_benchmark__only_hashmap__iter2()
     unsigned members_hits {0};
     hash_map.reset();
 
-    config basic_config;
-    basic_config.mark = false;
+    sstring_holder basic_sstring_holder;
+    basic_sstring_holder.mark = false;
 
     printf("\n%s\n\n", __FUNCTION__);
-    printf("sizeof(config) = %zu, hashmap.capacity() = %u, inserts = %u, string_max_size = %u, queries = %u\n",
-           sizeof(basic_config), hash_map.capacity(), inserts, string_max_size, queries);
+    printf("sizeof(sstring_holder) = %zu, hashmap.capacity() = %u, inserts = %u, string_max_size = %u, queries = %u\n",
+           sizeof(basic_sstring_holder), hash_map.capacity(), inserts, string_max_size, queries);
 
     printf("Preprocess data\n");
     srand(time(nullptr));
 
-    std::vector<config> members;
+    std::vector<sstring_holder> members;
     for (unsigned i = 0; i < inserts; i++)
     {
-        basic_config.mark = false;
-        basic_config.content = rand_sstring(7);
-        hash_map.insert(basic_config);
+        basic_sstring_holder.mark = false;
+        basic_sstring_holder.content = rand_sstring(7);
+        hash_map.insert(basic_sstring_holder);
         inserts_counter++;
     }
 
     for (unsigned i = 0; i < fixed_members; i++)
     {
-        basic_config.mark = false;
-        basic_config.content = rand_sstring(7);
-        members.emplace_back(std::move(basic_config));
+        basic_sstring_holder.mark = false;
+        basic_sstring_holder.content = rand_sstring(7);
+        members.emplace_back(std::move(basic_sstring_holder));
     }
 
     printf("Hashmap start watch\n");

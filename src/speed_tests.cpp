@@ -3,9 +3,9 @@
 namespace benchmarks
 {
 
-common::Hashmap<> hashmap(2000003);
-std::map<int, common::config> stl_map;
-std::unordered_map<int, common::config> stl_unordered_map;
+common::Hashmap<2000003> hashmap;
+std::map<int, common::int_holder> stl_map;
+std::unordered_map<int, common::int_holder> stl_unordered_map;
 
 #define TIMESPEC_NSEC(ts) ((ts)->tv_sec * 1000000000ULL + (ts)->tv_nsec)
 
@@ -47,7 +47,7 @@ static void benchmark()
     assert(stl_map.size() == 0);
     assert(stl_unordered_map.size() == 0);
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
 
     printf("\n%s\n\n", __FUNCTION__);
@@ -181,7 +181,7 @@ static void benchmark__only_hashmap()
     unsigned members_hits {0};
     hashmap.reset();
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
 
     printf("\n%s\n\n", __FUNCTION__);
@@ -385,7 +385,7 @@ static void test_intrinsics3()
  */
 static void benchmark__only_hashmap_basic_for_member()
 {
-    common::Hashmap<> hash_map(200003);
+    static common::ExperimentalHashmap<200003, common::int_holder> hash_map;
 
     constexpr unsigned uniwersum_size {1000000000};
 
@@ -398,7 +398,7 @@ static void benchmark__only_hashmap_basic_for_member()
     unsigned members_hits {0};
     hash_map.reset();
 
-    common::config basic_config;
+    common::int_holder basic_config;
     basic_config.mark = false;
 
     printf("\n%s\n\n", __FUNCTION__);
@@ -447,12 +447,11 @@ static void benchmark__only_hashmap_basic_for_member()
 int main()
 {
     benchmarks::benchmark();
-  //  benchmarks::sstring_benchmark__only_hashmap();
 
-//    benchmarks::test_intrinsics1();
-//    benchmarks::test_intrinsics2();
-//    benchmarks::test_intrinsics3();
+    benchmarks::test_intrinsics1();
+    benchmarks::test_intrinsics2();
+    benchmarks::test_intrinsics3();
 
-//    benchmarks::benchmark__only_hashmap_basic_for_member();
+    benchmarks::benchmark__only_hashmap_basic_for_member();
     return 0;
 }
