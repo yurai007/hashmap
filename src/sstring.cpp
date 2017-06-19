@@ -62,6 +62,15 @@
     shows that in scenario with very huge number of searches when string is NOT in hashmap my hashmap + sstring
     is 5x faster then std::unordered_map + std::string.
 
+  * iteration 7:
+    - static vars in template function is NOT good idea -> every instantiation has own static.
+      I had to move out hashmaps outside template (bad_alloc with ulimit = 4G).
+    - original sstring binary in bin/release had 40KB without any template magic. Now it has ~365KB and still grows :)
+      BUT. If I remove -g then automaticly 365KB -> 27KB ! If I add -s then 19KB!
+    - why log_debug slow downs things?
+
+  - TO DO: After all run on arm!
+
   TO DO1: should I use malloc instead new? (Like in sstring.hh?) Any overhead?
   TO DO2: test for 4GB sstring ?
   TO DO3: some variadic helpers?
@@ -243,18 +252,18 @@ static void test_case()
     }
     {
         char buf[] {"foobar"};
-        sstring<sizeof buf> str(buf);
+        sstring<sizeof buf> str {buf};
         str[0] = 'F';
         str[1] = 'O';
         assert(str[0] == 'F' && str[1] == 'O' && str[2] == 'o');
     }
     {
         char buf[] {"foobar"};
-        sstring<sizeof buf> str1(buf);
+        sstring<sizeof buf> str1 {buf};
         assert(str1.is_internal());
 
         char buf2[] {"foo894hfnsdjknfsbar"};
-        sstring<sizeof buf2> str2(buf2);
+        sstring<sizeof buf2> str2 {buf2};
         assert(!str2.is_internal());
     }
 
@@ -364,10 +373,11 @@ using SStringHashmap = common::Hashmap<Size,
                                        sstring_holder,
                                        common::Limited_quadratic_hash>;
 
-static sstrings::sstring<7> rand_sstring(unsigned)
+template<unsigned Size>
+static sstrings::sstring<Size> rand_sstring()
 {
-    sstrings::sstring<7> result;
-    for (unsigned i = 0; i < 7; i++)
+    sstrings::sstring<Size> result;
+    for (unsigned i = 0; i < Size; i++)
         result[i] = rand()%128;
     return result;
 }
@@ -536,130 +546,265 @@ static void sstring_benchmark__only_stl_unordered_map()
     printf("OK :)\n");
 }
 
-/* So now my SStringHashmap in iter2 benchmark is ~5x faster then unordered_map with string
- *
- * OK but I have only 10% filled :)
- */
-
-static void sstring_benchmark__only_hashmap__iter2()
+template<unsigned Size>
+static sstring_holder rand_sstring_in_holder()
 {
-    static SStringHashmap<2000003> hash_map;
-
-    constexpr unsigned string_max_size {7};
-
-    constexpr unsigned inserts = 190000;
-    constexpr unsigned fixed_members = 1024;
-    constexpr unsigned queries = 60000000;
-
-    unsigned inserts_counter {0};
-    unsigned members_counter {0};
-    unsigned members_hits {0};
-    hash_map.reset();
-
     sstring_holder basic_sstring_holder;
     basic_sstring_holder.mark = false;
-
-    printf("\n%s\n\n", __FUNCTION__);
-    printf("sizeof(sstring_holder) = %zu, hashmap.capacity() = %u, inserts = %u, string_max_size = %u, queries = %u\n",
-           sizeof(basic_sstring_holder), hash_map.capacity(), inserts, string_max_size, queries);
-
-    printf("Preprocess data\n");
-    srand(time(nullptr));
-
-    std::vector<sstring_holder> members;
-    for (unsigned i = 0; i < inserts; i++)
-    {
-        basic_sstring_holder.mark = false;
-        basic_sstring_holder.content = rand_sstring(7);
-        hash_map.insert(basic_sstring_holder);
-        inserts_counter++;
-    }
-
-    for (unsigned i = 0; i < fixed_members; i++)
-    {
-        basic_sstring_holder.mark = false;
-        basic_sstring_holder.content = rand_sstring(7);
-        members.emplace_back(std::move(basic_sstring_holder));
-    }
-
-    printf("Hashmap start watch\n");
-    uint64_t t0 = realtime_now();
-    for (unsigned i = 0; i < queries; i++)
-    {
-        members_hits += hash_map.member(members[i%fixed_members]);
-    }
-
-    uint64_t t1 = realtime_now();
-    uint64_t time_ms = (t1 - t0)/1000000;
-    printf("Hashmap stop watch: Time = %lu ms.\n", time_ms);
-
-    printf("Summary\n");
-    printf("inserts = %d, members = %d, hits = %d, hashmap.size = %d\n",
-           inserts_counter, members_counter, members_hits,
-           hash_map.size());
-    printf("hashmap.collisions = %d, colisions per insert = %d\n", hash_map.collisions,
-           (hash_map.collisions/(inserts_counter + queries)));
-
-    printf("OK :)\n");
+    basic_sstring_holder.content = rand_sstring<Size>();
+    return basic_sstring_holder;
 }
 
-static void sstring_benchmark__only_stl_unordered_map__iter2()
-{
-    std::unordered_map<std::string, std::string> stl_unordered_map;
+template<class Map, class Key>
+static inline bool adapted_find(Map &hashmap, Key &key);
 
-    constexpr unsigned inserts = 190000;
+static inline bool adapted_find(auto &hashmap, auto &key)
+{
+    return hashmap.find(key);
+}
+
+static inline bool adapted_find(std::unordered_map<std::string, std::string> &hashmap,
+                                auto &key)
+{
+    return hashmap.find(key) != hashmap.end();
+}
+
+template<class Map, class Key>
+static inline void adapted_insert(Map &hashmap, Key &key);
+
+static inline void adapted_insert(auto &hashmap, auto &key)
+{
+    hashmap.insert(key);
+}
+
+static inline void adapted_insert(std::unordered_map<std::string, std::string> &hashmap,
+                                  auto &key)
+{
+    hashmap.insert({key, key});
+}
+
+/* So now my SStringHashmap in iter2 benchmark is ~5x faster then unordered_map with string.
+ */
+template<class Hashmap, class KeyGenerator, class Stats>
+static void SStringHashmap_perf(Hashmap &hash_map,
+                                              KeyGenerator &&generator,
+                                              Stats &&stats,
+                                              unsigned inserts,
+                                              bool present = false)
+{
+    using key_type = typename Hashmap::key_type;
+
+    constexpr bool debug_logs {false};
+    constexpr unsigned string_max_size {7};
+
     constexpr unsigned fixed_members = 1024;
-    constexpr unsigned queries = 60000000;
+    constexpr unsigned queries = 100000000;
 
     unsigned inserts_counter {0};
     unsigned members_counter {0};
     unsigned members_hits {0};
-    stl_unordered_map.clear();
 
-    printf("\n%s\n\n", __FUNCTION__);
+    hash_map.clear();
 
-    printf("Preprocess data\n");
+    if (debug_logs)
+        printf("\n%s\n\n", __PRETTY_FUNCTION__);
+
+    if (debug_logs)
+        printf("hashmap.capacity = %u, inserts = %u, string_max_size = %u, queries = %u, "
+               "sizeof(Hashmap::key_type) = %lu\n", static_cast<unsigned>(hash_map.bucket_count()),
+               inserts, string_max_size, queries, sizeof(key_type));
+
+    if (debug_logs)
+        printf("Inserting strings to hashmap and queries preprocessing\n");
     srand(time(nullptr));
+
+    std::vector<key_type> members;
     for (unsigned i = 0; i < inserts; i++)
     {
-        auto str = rand_string(7);
-        stl_unordered_map[str] = str;
+        auto holder = generator();
+        adapted_insert(hash_map, holder);
         inserts_counter++;
+        if (present && (i < fixed_members))
+            members.emplace_back(std::move(holder));
     }
 
-    std::vector<std::string> members;
-    for (unsigned i = 0; i < fixed_members; i++)
+    if (!present)
     {
-        members.push_back(rand_string(7));
+        for (unsigned i = 0; i < fixed_members; i++)
+        {
+            auto holder = generator();
+            members.emplace_back(std::move(holder));
+        }
     }
 
-    printf("Hashmap start watch\n");
+    if (debug_logs)
+        printf("Start queries\n");
     uint64_t t0 = realtime_now();
     for (unsigned i = 0; i < queries; i++)
     {
-        auto string = members[i%fixed_members];
-        members_hits += (stl_unordered_map.find(string) != stl_unordered_map.end());
+        auto &&string = members[i%fixed_members];
+        members_hits += adapted_find(hash_map, string);
     }
 
     uint64_t t1 = realtime_now();
     uint64_t time_ms = (t1 - t0)/1000000;
-    printf("Hashmap stop watch: Time = %lu ms.\n", time_ms);
+     if (debug_logs)
+        printf("Stop queries\n");
 
-    printf("Summary\n");
-    printf("inserts = %d, members = %d, hits = %d, hashmap.size = %d\n",
-           inserts_counter, members_counter, members_hits,
-           stl_unordered_map.size());
-    printf("OK :)\n");
+    printf("inserts = %d, members = %d, hits = %d, size/capacity = %f\n",
+           inserts_counter, members_counter, members_hits, hash_map.size()*1.0f/hash_map.bucket_count());
+    stats(hash_map, inserts_counter, queries, time_ms);
+    printf("Time = %lu ms.\n", time_ms);
 }
 
-}
 
+}
 
 int main()
 {
-    specialization_proof_of_concept::test_case();
+//    specialization_proof_of_concept::test_case();
     sstrings::test_case();
-    hashing_benchmark::sstring_benchmark__only_hashmap__iter2();
-    //hashing_benchmark::sstring_benchmark__only_stl_unordered_map__iter2();
+
+    using hashing_benchmark::SStringHashmap_perf;
+
+    using Hashmap2M = hashing_benchmark::SStringHashmap<2000003>;
+    using Hashmap4M = hashing_benchmark::SStringHashmap<4000037>;
+    using Hashmap10M = hashing_benchmark::SStringHashmap<10000019>;
+    using Hashmap = hashing_benchmark::SStringHashmap<50000021>;
+
+    using StlHashMap = std::unordered_map<std::string, std::string>;
+
+    auto stl_generator = [](){
+        return hashing_benchmark::rand_string(7);
+    };
+    auto my_generator = [](){
+        return hashing_benchmark::rand_sstring_in_holder<7>();
+    };
+
+    auto my_stats = [](auto &hashmap, auto all_inserts, auto all_queries, auto time){
+            printf("hashmap.collisions = %d, colisions per insert = %d, avg find time = %dns\n", hashmap.collisions,
+                   (hashmap.collisions/(all_inserts + all_queries)),
+                   static_cast<int>((1000000LL*time)/all_queries));
+    };
+
+    auto stl_stats = [](auto &hashmap, auto all_inserts, auto all_queries, auto time){
+        (void)hashmap; (void)all_inserts;
+        printf("avg find time = %dns\n", static_cast<int>((1000000LL*time)/all_queries));
+    };
+
+    static Hashmap my_hash_map;
+    static StlHashMap stl_hash_map;
+    static Hashmap2M hash_map2m;
+    static Hashmap4M hash_map4m;
+    static Hashmap10M hash_map10m;
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 190000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 190000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 400000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 400000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 800000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 800000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1000000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1000000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1300000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1300000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1600000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1600000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap4M>(hash_map4m, my_generator, my_stats, 2000000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 2000000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 4000000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 4000000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 6000000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 6000000);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 7000000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 7000000);
+    printf("\n");
+
+
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 190000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 190000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 400000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 400000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 800000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 800000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1000000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1000000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1300000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1300000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1600000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1600000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap2M>(hash_map2m, my_generator, my_stats, 1900000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 1900000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap4M>(hash_map4m, my_generator, my_stats, 2000000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 2000000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 4000000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 4000000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 6000000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 6000000, true);
+    printf("\n");
+
+    SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 7000000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 7000000, true);
+    printf("\n");
+    /*
+       Time:
+            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.500000
+            Time = 1503 ms.
+            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.500000
+            Time = 1676 ms.
+            VS
+            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.685430
+            Time = 7621 ms.
+            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.685430
+            Time = 6549 ms.
+
+            I'm 4-5x faster.
+
+       Memory:
+            430M (-fpack-struct) VS 2500M -> I use 6x less memory.
+    */
+    SStringHashmap_perf<Hashmap>(my_hash_map, my_generator, my_stats, 25000000);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 25000000);
+    printf("\n");
+    SStringHashmap_perf<Hashmap>(my_hash_map, my_generator, my_stats, 25000000, true);
+    SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 25000000, true);
+    printf("\n");
     return 0;
 }

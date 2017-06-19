@@ -330,6 +330,8 @@ template<unsigned Size,
 class Hashmap
 {
 public:
+    using key_type = Holder;
+
     Hashmap()
     {
         for (auto &e : table)
@@ -365,6 +367,8 @@ public:
         return (table[i] == c);
     }
 
+    bool find(Holder &c) { return member(c); }
+
     unsigned size() const
     {
         return n;
@@ -375,15 +379,23 @@ public:
         return table.size();
     }
 
+    unsigned bucket_count() const
+    {
+        return capacity();
+    }
+
     void reset()
     {
         n = 0;
+        collisions = 0;
         for (auto &e : table)
         {
             e.mark = false;
             e.init_as_empty();
         }
     }
+
+    void clear() { reset(); }
 
     unsigned collisions {0};
 
@@ -423,8 +435,8 @@ protected:
 
     unsigned n {0};
 public:
-    static_assert((Size == 2000003) || (Size == 200003) || (Size == 100003) || (Size == 500),
-                  "Size not supported");
+    static_assert((Size == 50000021) || (Size == 10000019) || (Size == 4000037) || (Size == 2000003) || (Size == 200003)
+                  || (Size == 100003) || (Size == 500), "Size not supported");
     std::array<Holder, Size> table;
 };
 

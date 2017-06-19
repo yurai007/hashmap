@@ -9,7 +9,7 @@ speed_tests: ../../src/speed_tests.cpp
 	$(CXX) $(CXXFLAGS) ../../src/speed_tests.cpp -o speed_tests $(LDFLAGS)
 
 sstring: ../../src/sstring.cpp
-	$(CXX) $(CXXFLAGS) -fpack-struct ../../src/sstring.cpp -o sstring $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) ../../src/sstring.cpp -o sstring $(LDFLAGS)
 
 all: correctness_tests speed_tests sstring
 
