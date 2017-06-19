@@ -69,6 +69,39 @@
       BUT. If I remove -g then automaticly 365KB -> 27KB ! If I add -s then 19KB!
     - why log_debug slow downs things?
 
+       Time:
+            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.500000
+            Time = 1503 ms.
+            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.500000
+            Time = 1676 ms.
+            VS
+            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.685430
+            Time = 7621 ms.
+            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.685430
+            Time = 6549 ms.
+
+            I'm 4-5x faster.
+
+       Memory:
+            430M (-fpack-struct) VS 2500M -> I use 6x less memory.
+
+  * iteration 8:
+    - I have faster hash in sstring_holder - for small strings I don't need so many modulo.
+      Faster hash is really faster :)
+
+      Time:
+            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.500000
+            hashmap.collisions = 141115548, colisions per insert = 1, avg find time = 12ns
+            Time = 1251 ms.
+
+            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.500000
+            hashmap.collisions = 11621561, colisions per insert = 0, avg find time = 13ns
+            Time = 1360 ms.
+      Memory:
+            Still 430M (-fpack-struct).
+
+      Speedup ~17%-19%.
+
   - TO DO: After all run on arm!
 
   TO DO1: should I use malloc instead new? (Like in sstring.hh?) Any overhead?
@@ -360,10 +393,10 @@ struct sstring_holder final
         int mul = 1;
         for (int i = 0; i < 7; i++)
         {
-            result = (result + (holder.content[i]*mul) % m) % m ;
+            result = result + (holder.content[i]*mul);
             mul *= 10;
         }
-        return result;
+        return result % m;
     }
 } __attribute__((packed));
 
@@ -682,7 +715,8 @@ int main()
     };
 
     auto my_stats = [](auto &hashmap, auto all_inserts, auto all_queries, auto time){
-            printf("hashmap.collisions = %d, colisions per insert = %d, avg find time = %dns\n", hashmap.collisions,
+            printf("hashmap.collisions = %d, colisions per insert = %d, avg find time = %dns\n",
+                   hashmap.collisions,
                    (hashmap.collisions/(all_inserts + all_queries)),
                    static_cast<int>((1000000LL*time)/all_queries));
     };
@@ -783,23 +817,9 @@ int main()
     SStringHashmap_perf<Hashmap10M>(hash_map10m, my_generator, my_stats, 7000000, true);
     SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 7000000, true);
     printf("\n");
-    /*
-       Time:
-            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.500000
-            Time = 1503 ms.
-            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.500000
-            Time = 1676 ms.
-            VS
-            inserts = 25000000, members = 0, hits = 0, size/capacity = 0.685430
-            Time = 7621 ms.
-            inserts = 25000000, members = 0, hits = 100000000, size/capacity = 0.685430
-            Time = 6549 ms.
 
-            I'm 4-5x faster.
 
-       Memory:
-            430M (-fpack-struct) VS 2500M -> I use 6x less memory.
-    */
+
     SStringHashmap_perf<Hashmap>(my_hash_map, my_generator, my_stats, 25000000);
     SStringHashmap_perf<StlHashMap>(stl_hash_map, stl_generator, stl_stats, 25000000);
     printf("\n");
